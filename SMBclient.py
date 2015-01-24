@@ -35,6 +35,7 @@ class SMBclient(ui.View):
     self.view['bt_remote_rename'].action = self.bt_remote_rename
     self.view['bt_remote_delete'].action = self.bt_remote_delete
     self.view['bt_remote_mkdir'].action = self.bt_remote_mkdir
+    self.view['bt_remote_rmdir'].action = self.bt_remote_rmdir
     root_len = len(self.root)
     self.view['lb_local'].text = self.path[root_len:]
     self.tv_local = self.view['tv_local']
@@ -150,12 +151,36 @@ class SMBclient(ui.View):
     all = self.get_remote_dir()
     self.refresh_table(self.tv_remote,self.lst_remote,all)
 
+  def bt_remote_rmdir(self, sender):
+    if self.loggedIn:
+      self.view_po = ui.load_view('popover')
+      self.view_po.name = 'Remove Directory'
+      self.view_po['lb_old_name'].text = self.pwd + '\\'
+      self.view_po['lb_on'].text = 'Path:'
+      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+      self.view_po['lb_nn'].text = 'Remove Dir:'
+      self.view_po['bt_cancel'].action = self.bt_cancel
+      self.view_po['bt_okay'].action = self.bt_remote_rmdir_okay
+
+  def bt_remote_rmdir_okay(self, sender):
+    directory = self.view_po['tf_new_name'].text
+    if self.pwd == '\\' and directory == '':
+      self.tv_info.text += "\nSorry, root directory is not removable."
+    else:
+      try:
+        self.smb.deleteDirectory(self.share,self.pwd + '\\' + directory)
+      except Exception, e:
+        self.tv_info.text += '\n' + str(e)
+    self.view_po.close()
+    all = self.get_remote_dir()
+    self.refresh_table(self.tv_remote,self.lst_remote,all)
+
   def bt_remote_mkdir(self, sender):
     if self.loggedIn:
       self.view_po = ui.load_view('popover')
       self.view_po.name = 'Make Directory'
-      self.view_po['lb_old_name'].hidden = True 
-      self.view_po['lb_on'].hidden = True
+      self.view_po['lb_old_name'].text = self.pwd + '\\'
+      self.view_po['lb_on'].text = 'Path:'
       self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
       self.view_po['lb_nn'].text = 'New Dir:'
       self.view_po['bt_cancel'].action = self.bt_cancel
@@ -206,7 +231,8 @@ class SMBclient(ui.View):
         self.view['lb_remote'].text = self.pwd
         sender.title = 'Disconnect'
       except Exception, e:
-        print e
+        self.tv_info.text += '\n' + str(e)
+        self.loggedIn = False 
     else:
       if self.smb is not None:
         del(self.smb);
@@ -222,6 +248,8 @@ class SMBclient(ui.View):
     if self.loggedIn:
       pos = self.localFile.rfind('/')
       fileName = self.localFile[pos+1:]
+      #size = ' {} Bytes'.format(os.path.getsize(self.localFile))
+      #self.tv_info.text += "\nput " + fileName + size
       fh = open(self.localFile, 'rb')
       if self.pwd == '\\':
         self.smb.putFile(self.share, self.pwd + fileName, fh.read)
@@ -235,6 +263,10 @@ class SMBclient(ui.View):
     if self.loggedIn:
       pos = self.remoteFile.rfind('\\')
       fileName = self.remoteFile[pos+1:]
+      #entries = self.smb.listPath(self.share, self.remoteFile)
+      #for e in entries:
+        #size = ' {} Bytes'.format(e.get_filesize())
+      #self.tv_info.text += "\nget " + fileName + size
       fh = open(self.path + '/' + fileName,'wb')
       try:
         self.smb.getFile(self.share, self.remoteFile, fh.write)
