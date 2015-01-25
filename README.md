@@ -5,3 +5,4 @@ Small ui example: upload/download/rename/delete files or make/remove directories
 <br/>
 First you need to download the impacket python module: impacket-0.9.12.tar.gz<br/>
 Then extract \impacket-0.9.12\impacket\ to the side-packages directory.<br/>
+You also need a copy of ntpath.py in your side-package directory.<br/>
