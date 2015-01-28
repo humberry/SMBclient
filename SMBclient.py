@@ -38,8 +38,8 @@ class SMBclient(ui.View):
     self.view['bt_remote_delete'].action = self.bt_remote_delete
     self.view['bt_remote_mkdir'].action = self.bt_remote_mkdir
     self.view['bt_remote_rmdir'].action = self.bt_remote_rmdir
-    root_len = len(self.root)
-    self.view['lb_local'].text = self.path[root_len:]
+    self.root_len = len(self.root)
+    self.view['lb_local'].text = self.path[self.root_len:]
     self.tv_local = self.view['tv_local']
     self.tv_remote = self.view['tv_remote']
     self.tv_info = self.view['tv_info']
@@ -81,13 +81,15 @@ class SMBclient(ui.View):
     self.view_po.close()
 
   def bt_local_delete(self, sender):
-    pos = self.localFile.rfind('/')
-    self.fileName = self.localFile[pos+1:]
     self.view_po = ui.load_view('select')
     self.view_po.name = 'Delete local file?'
     self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
-    pos = self.localFile.rfind('/')
-    fileName = self.localFile[pos+1:]
+    if len(self.localFile) > 0:
+      pos = self.localFile.rfind('/')
+      self.fileName = self.localFile[pos+1:]
+    else:
+      self.fileName = self.path[self.root_len:]
+      self.view_po['sc_range'].selected_index = 2
     self.view_po['tf_name'].text = self.fileName
     self.view_po['tf_name'].enabled = False
     self.view_po['bt_okay'].action = self.bt_select_okay_local_delete
@@ -97,7 +99,11 @@ class SMBclient(ui.View):
     def delete_files(filter=None):
       files =[]
       if filter == None:
-        files = [self.view_po['tf_name'].text]
+        if self.localFile != '':
+          files = [self.view_po['tf_name'].text]
+        else:
+          self.tv_info.text += "\nNo file selected to delete."
+          return
       else:
         #check filter
         if filter[0] == '*' and filter[1] == '.':
@@ -116,7 +122,10 @@ class SMBclient(ui.View):
                   if entry.find(filter) == entry_len-filter_len:
                     files.append(entry)
       for file in files:
-        os.remove(self.path + '/' + file)
+        try:
+          os.remove(self.path + '/' + file)
+        except Exception, e:
+          self.tv_info.text += '\n' + str(e)
     rang = self.view_po['sc_range'].selected_index
     if rang == 0: # selected file
       delete_files()
@@ -164,11 +173,15 @@ class SMBclient(ui.View):
 
   def bt_remote_delete(self, sender):
     if self.loggedIn:
-      pos = self.remoteFile.rfind('\\')
-      self.fileName = self.remoteFile[pos+1:]
       self.view_po = ui.load_view('select')
       self.view_po.name = 'Delete remote file?'
       self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+      if len(self.remoteFile) > 0:
+        pos = self.remoteFile.rfind('\\')
+        self.fileName = self.remoteFile[pos+1:]
+      else:
+        self.fileName = self.pwd
+        self.view_po['sc_range'].selected_index = 2
       self.view_po['tf_name'].text = self.fileName
       self.view_po['tf_name'].enabled = False
       self.view_po['bt_okay'].action = self.bt_select_okay_remote_delete
@@ -178,7 +191,11 @@ class SMBclient(ui.View):
     def delete_files(filter=None):
       files =[]
       if filter == None:
-        files = [self.view_po['tf_name'].text]
+        if self.remoteFile != '':
+          files = [self.view_po['tf_name'].text]
+        else:
+          self.tv_info.text += "\nNo file selected to delete."
+          return
       else:
         #check filter
         if filter[0] != '*' and filter[1] != '.':
@@ -197,7 +214,10 @@ class SMBclient(ui.View):
               if entry.find(filter) == entry_len-filter_len:
                 files.append(entry)
       for file in files:
-        self.smb.deleteFile(self.share, self.pwd + '\\' + file)
+        try:
+          self.smb.deleteFile(self.share, self.pwd + '\\' + file)
+        except Exception, e:
+          self.tv_info.text += '\n' + str(e)
     rang = self.view_po['sc_range'].selected_index
     if rang == 0: # selected file
       delete_files()
@@ -416,6 +436,7 @@ class SMBclient(ui.View):
         self.path = self.path[:pos]
       else:
         self.path = self.path + filename_tapped
+      self.localFile = ''
       all = self.get_dir()
       root_len = len(self.root)
       self.view['lb_local'].text = self.path[root_len:]
@@ -437,6 +458,7 @@ class SMBclient(ui.View):
           self.pwd = filename_tapped
         else:
           self.pwd += filename_tapped
+      self.remoteFile = ''
       all = self.get_remote_dir()
       self.refresh_table(self.tv_remote,self.lst_remote,all)
       self.view['lb_remote'].text = self.pwd
