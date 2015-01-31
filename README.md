@@ -7,4 +7,3 @@ First you need to download the impacket python module: impacket-0.9.12.tar.gz<br
 Then extract \impacket-0.9.12\impacket\ to the side-packages directory.<br/>
 And you also need a copy of ntpath.py in your side-package directory.<br/>
 <br/>
-Code not finished yet (good chance to find double code).<br/>
