@@ -60,16 +60,25 @@ class SMBclient(ui.View):
     self.lst_remote.delete_enabled = False 
     self.view.present('fullscreen')
 
+  def is_root(self, path):
+    if len(path) == 1:
+      if path == '/' or path == '\\':
+        return True
+    return False
+
+  def open_popover_view(self, view_name, view_title):
+    self.view_po = ui.load_view(view_name)
+    self.view_po.name = view_title
+    self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+    self.view_po['bt_cancel'].action = self.bt_cancel
+  
   def bt_local_rename(self, sender):
+    self.open_popover_view('popover', 'Rename local file?')
     pos = self.localFile.rfind('/')
     self.fileName = self.localFile[pos+1:]
-    self.view_po = ui.load_view('popover')
-    self.view_po.name = 'Rename'
-    self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
     self.view_po['lb_old_name'].text = self.fileName
     self.view_po['tf_new_name'].text = self.fileName
     self.view_po['bt_okay'].action = self.bt_local_rename_okay
-    self.view_po['bt_cancel'].action = self.bt_cancel
 
   def bt_local_rename_okay(self, sender):
     os.rename(self.fileName, self.view_po['tf_new_name'].text)
@@ -81,9 +90,7 @@ class SMBclient(ui.View):
     self.view_po.close()
 
   def bt_local_delete(self, sender):
-    self.view_po = ui.load_view('select')
-    self.view_po.name = 'Delete local file?'
-    self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+    self.open_popover_view('select', 'Delete local file(s)?')
     if len(self.localFile) > 0:
       pos = self.localFile.rfind('/')
       self.fileName = self.localFile[pos+1:]
@@ -93,58 +100,69 @@ class SMBclient(ui.View):
     self.view_po['tf_name'].text = self.fileName
     self.view_po['tf_name'].enabled = False
     self.view_po['bt_okay'].action = self.bt_select_okay_local_delete
-    self.view_po['bt_cancel'].action = self.bt_cancel
+
+  def get_files(self, filter=None, local=True):
+    files = []
+    if filter == None:
+      if local and self.localFile != '' or not local and self.remoteFile != '':
+        files = [self.view_po['tf_name'].text]
+      else:
+        self.tv_info.text += "\nNo file selected to delete."
+    else:
+      #check filter
+      if filter[0] != '*' and filter[1] != '.':
+        self.tv_info.text += "\nFilter not valid! It has to start with *."
+        return files
+      if not local:
+        entries = self.smb.listPath(self.share, self.pwd + '\\' + filter)
+        filter = filter[1:]
+        for e in entries:
+          if e.is_directory() == 0:
+            entry = str(e.get_longname())
+            if filter == '.*': # all files
+              files.append(entry)
+            else: # filtered files
+              filter_len = len(filter)
+              entry_len = len(entry)
+              if entry.find(filter) == entry_len-filter_len:
+                files.append(entry)
+      else:
+        filter = filter[1:]
+        for entry in sorted(os.listdir(self.path)):
+          if os.path.isfile(self.path + '/' + entry):
+            if filter == '.*': # all files
+              files.append(entry)
+            else: # filtered files
+              filter_len = len(filter)
+              entry_len = len(entry)
+              if entry.find(filter) == entry_len-filter_len:
+                files.append(entry)
+    return files
 
   def bt_select_okay_local_delete(self, sender):
-    def delete_files(filter=None):
-      files =[]
-      if filter == None:
-        if self.localFile != '':
-          files = [self.view_po['tf_name'].text]
-        else:
-          self.tv_info.text += "\nNo file selected to delete."
-          return
-      else:
-        #check filter
-        if filter[0] == '*' and filter[1] == '.':
-          filter = filter[1:]
-        else:
-          self.tv_info.text += "\nFilter not valid! It has to start with *."
-          return
-        files = []
-        for entry in sorted(os.listdir(self.path)):
-            if os.path.isfile(self.path + '/' + entry):
-                if filter == '.*':
-                  files.append(entry)
-                else:
-                  filter_len = len(filter)
-                  entry_len = len(entry)
-                  if entry.find(filter) == entry_len-filter_len:
-                    files.append(entry)
+    rang = self.view_po['sc_range'].selected_index
+    if rang == 0: # selected file
+      files = self.get_files()
+    elif rang == 1: # all files
+      files = self.get_files(filter='*.*')
+    elif rang == 2: # filter
+      files = self.get_files(filter=self.view_po['tf_filter'].text)
+    if len(files) > 0:  
       for file in files:
         try:
           os.remove(self.path + '/' + file)
+          self.localFile = ''
         except Exception, e:
           self.tv_info.text += '\n' + str(e)
-    rang = self.view_po['sc_range'].selected_index
-    if rang == 0: # selected file
-      delete_files()
-    elif rang == 1: # all files
-      delete_files(filter='*.*')
-    elif rang == 2: # filter
-      delete_files(filter=self.view_po['tf_filter'].text)
-    all = self.get_dir()
-    self.refresh_table(self.tv_local,self.lst_local,all)
+      all = self.get_dir()
+      self.refresh_table(self.tv_local,self.lst_local,all)
     self.view_po.close()
 
   def bt_local_mkdir(self, sender):
-    self.view_po = ui.load_view('popover')
-    self.view_po.name = 'Make Directory'
-    self.view_po['lb_old_name'].hidden = True 
-    self.view_po['lb_on'].hidden = True
-    self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+    self.open_popover_view('popover', 'Make local directory?')
+    self.view_po['lb_old_name'].text = self.path[self.root_len:] + '/'
+    self.view_po['lb_on'].text = 'Path:'
     self.view_po['lb_nn'].text = 'New Dir:'
-    self.view_po['bt_cancel'].action = self.bt_cancel
     self.view_po['bt_okay'].action = self.bt_local_mkdir_okay
 
   def bt_local_mkdir_okay(self, sender):
@@ -156,14 +174,12 @@ class SMBclient(ui.View):
 
   def bt_remote_rename(self, sender):
     if self.loggedIn:
+      self.open_popover_view('popover', 'Rename remote file?')
       pos = self.remoteFile.rfind('\\')
       self.fileName = self.remoteFile[pos+1:]
-      self.view_po = ui.load_view('popover')
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
       self.view_po['lb_old_name'].text = self.fileName
       self.view_po['tf_new_name'].text = self.fileName
       self.view_po['bt_okay'].action = self.bt_remote_rename_okay
-      self.view_po['bt_cancel'].action = self.bt_cancel
 
   def bt_remote_rename_okay(self, sender):
     self.smb.rename(self.share, self.remoteFile, self.pwd + '\\' + self.view_po['tf_new_name'].text)
@@ -173,9 +189,7 @@ class SMBclient(ui.View):
 
   def bt_remote_delete(self, sender):
     if self.loggedIn:
-      self.view_po = ui.load_view('select')
-      self.view_po.name = 'Delete remote file?'
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+      self.open_popover_view('select', 'Delete remote file(s)?')
       if len(self.remoteFile) > 0:
         pos = self.remoteFile.rfind('\\')
         self.fileName = self.remoteFile[pos+1:]
@@ -185,64 +199,40 @@ class SMBclient(ui.View):
       self.view_po['tf_name'].text = self.fileName
       self.view_po['tf_name'].enabled = False
       self.view_po['bt_okay'].action = self.bt_select_okay_remote_delete
-      self.view_po['bt_cancel'].action = self.bt_cancel
 
   def bt_select_okay_remote_delete(self, sender):
-    def delete_files(filter=None):
-      files =[]
-      if filter == None:
-        if self.remoteFile != '':
-          files = [self.view_po['tf_name'].text]
-        else:
-          self.tv_info.text += "\nNo file selected to delete."
-          return
-      else:
-        #check filter
-        if filter[0] != '*' and filter[1] != '.':
-          self.tv_info.text += "\nFilter not valid! It has to start with *."
-          return
-        entries = self.smb.listPath(self.share, self.pwd + '\\' + filter)
-        filter = filter[1:]
-        for e in entries:
-          if e.is_directory() == 0:
-            entry = str(e.get_longname())
-            if filter == '.*':
-              files.append(entry)
-            else:
-              filter_len = len(filter)
-              entry_len = len(entry)
-              if entry.find(filter) == entry_len-filter_len:
-                files.append(entry)
+    rang = self.view_po['sc_range'].selected_index
+    if rang == 0: # selected file
+      files = self.get_files(local=False)
+    elif rang == 1: # all files
+      files = self.get_files(filter='*.*', local=False)
+    elif rang == 2: # filter
+      files = self.get_files(filter=self.view_po['tf_filter'].text, local=False)
+    if len(files) > 0:  
       for file in files:
         try:
           self.smb.deleteFile(self.share, self.pwd + '\\' + file)
+          self.remoteFile = ''
         except Exception, e:
           self.tv_info.text += '\n' + str(e)
-    rang = self.view_po['sc_range'].selected_index
-    if rang == 0: # selected file
-      delete_files()
-    elif rang == 1: # all files
-      delete_files(filter='*.*')
-    elif rang == 2: # filter
-      delete_files(filter=self.view_po['tf_filter'].text)
-    all = self.get_remote_dir()
-    self.refresh_table(self.tv_remote,self.lst_remote,all)
+      all = self.get_remote_dir()
+      self.refresh_table(self.tv_remote,self.lst_remote,all)
     self.view_po.close()
 
   def bt_remote_rmdir(self, sender):
     if self.loggedIn:
-      self.view_po = ui.load_view('popover')
-      self.view_po.name = 'Remove Directory'
-      self.view_po['lb_old_name'].text = self.pwd + '\\'
+      self.open_popover_view('popover', 'Remove remote directory?')
+      if self.is_root(self.pwd):
+        self.view_po['lb_old_name'].text = self.pwd
+      else:
+        self.view_po['lb_old_name'].text = self.pwd + '\\'
       self.view_po['lb_on'].text = 'Path:'
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
       self.view_po['lb_nn'].text = 'Remove Dir:'
-      self.view_po['bt_cancel'].action = self.bt_cancel
       self.view_po['bt_okay'].action = self.bt_remote_rmdir_okay
 
   def bt_remote_rmdir_okay(self, sender):
     directory = self.view_po['tf_new_name'].text
-    if self.pwd == '\\' and directory == '':
+    if self.is_root(self.pwd) and directory == '':
       self.tv_info.text += "\nSorry, root directory is not removable."
     else:
       try:
@@ -255,18 +245,18 @@ class SMBclient(ui.View):
 
   def bt_remote_mkdir(self, sender):
     if self.loggedIn:
-      self.view_po = ui.load_view('popover')
-      self.view_po.name = 'Make Directory'
-      self.view_po['lb_old_name'].text = self.pwd + '\\'
+      self.open_popover_view('popover', 'Make remote directory?')
+      if self.is_root(self.pwd):
+        self.view_po['lb_old_name'].text = self.pwd
+      else:
+        self.view_po['lb_old_name'].text = self.pwd + '\\'
       self.view_po['lb_on'].text = 'Path:'
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
       self.view_po['lb_nn'].text = 'New Dir:'
-      self.view_po['bt_cancel'].action = self.bt_cancel
       self.view_po['bt_okay'].action = self.bt_remote_mkdir_okay
 
   def bt_remote_mkdir_okay(self, sender):
     directory = self.view_po['tf_new_name'].text
-    if self.pwd == '\\':
+    if self.is_root(self.pwd):
       self.smb.createDirectory(self.share,self.pwd + directory)
     else:
       self.smb.createDirectory(self.share,self.pwd + '\\' + directory)
@@ -324,90 +314,55 @@ class SMBclient(ui.View):
 
   def bt_upload(self, sender):	#put
     if self.loggedIn:
-      self.view_po = ui.load_view('select')
-      self.view_po.name = 'Upload'
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
-      pos = self.localFile.rfind('/')
-      fileName = self.localFile[pos+1:]
-      self.view_po['tf_name'].text = fileName
+      self.open_popover_view('select', 'Upload local file(s)?')
+      if len(self.localFile) > 0:
+        pos = self.localFile.rfind('/')
+        self.fileName = self.localFile[pos+1:]
+      else:
+        self.fileName = self.path[self.root_len:]
+        self.view_po['sc_range'].selected_index = 1
+      self.view_po['tf_name'].text = self.fileName
       self.view_po['tf_name'].enabled = False
       self.view_po['bt_okay'].action = self.bt_select_okay_put
-      self.view_po['bt_cancel'].action = self.bt_cancel
 
   def bt_select_okay_put(self, sender):
-    def write_files(filter=None):
-      files =[]
-      if filter == None:
-        files = [self.view_po['tf_name'].text]
-      else:
-        #check filter
-        if filter[0] == '*' and filter[1] == '.':
-          filter = filter[1:]
-        else:
-          self.tv_info.text += "\nFilter not valid! It has to start with *."
-          return
-        files = []
-        for entry in sorted(os.listdir(self.path)):
-            if os.path.isfile(self.path + '/' + entry):
-                if filter == '.*':
-                  files.append(entry)
-                else:
-                  filter_len = len(filter)
-                  entry_len = len(entry)
-                  if entry.find(filter) == entry_len-filter_len:
-                    files.append(entry)
+    rang = self.view_po['sc_range'].selected_index
+    if rang == 0: # selected file
+      files = self.get_files()
+    elif rang == 1: # all files
+      files = self.get_files(filter='*.*')
+    elif rang == 2: # filter
+      files = self.get_files(filter=self.view_po['tf_filter'].text)
+    if len(files) > 0:  
       for file in files:
         fh = open(self.path + '/' + file, 'rb')
-        if self.pwd == '\\':
+        if self.is_root(self.pwd):
           self.smb.putFile(self.share, self.pwd + file, fh.read)
         else:
           self.smb.putFile(self.share, self.pwd + '\\' + file, fh.read)
         fh.close()
-    rang = self.view_po['sc_range'].selected_index
-    if rang == 0: # selected file
-      write_files()
-    elif rang == 1: # all files
-      write_files(filter='*.*')
-    elif rang == 2: # filter
-      write_files(filter=self.view_po['tf_filter'].text)
-    all = self.get_remote_dir()
-    self.refresh_table(self.tv_remote,self.lst_remote,all)
+      all = self.get_remote_dir()
+      self.refresh_table(self.tv_remote,self.lst_remote,all)
     self.view_po.close()
 
   def bt_download(self, sender):	#get
     if self.loggedIn:
-      self.view_po = ui.load_view('select')
-      self.view_po.name = 'Download'
-      self.view_po.present('popover',popover_location=(self.view.width/2,self.view.height/2))
+      self.open_popover_view('select', 'Download remote file(s)?')
       pos = self.remoteFile.rfind('\\')
       fileName = self.remoteFile[pos+1:]
       self.view_po['tf_name'].text = fileName
       self.view_po['tf_name'].enabled = False
       self.view_po['bt_okay'].action = self.bt_select_okay_get
-      self.view_po['bt_cancel'].action = self.bt_cancel
 
   def bt_select_okay_get(self, sender):
-    def write_files(filter=None):
-      files =[]
-      if filter == None:
-        files = [self.view_po['tf_name'].text]
-      else:
-        #check filter
-        if filter[0] != '*' and filter[1] != '.':
-          self.tv_info.text += "\nFilter not valid! It has to start with *."
-          return
-        entries = self.smb.listPath(self.share, self.pwd + '\\' + filter)
-        filter = filter[1:]
-        for e in entries:
-          if e.is_directory() == 0:
-            entry = str(e.get_longname())
-            if filter == '.*':
-              files.append(entry)
-            else:
-              filter_len = len(filter)
-              entry_len = len(entry)
-              if entry.find(filter) == entry_len-filter_len:
-                files.append(entry)
+    rang = self.view_po['sc_range'].selected_index
+    if rang == 0: # selected file
+      files = self.get_files(local=False)
+    elif rang == 1: # all files
+      files = self.get_files(filter='*.*', local=False)
+    elif rang == 2: # filter
+      files = self.get_files(filter=self.view_po['tf_filter'].text, local=False)
+    if len(files) > 0:  
       for file in files:
         fh = open(self.path + '/' + file,'wb')
         try:
@@ -416,15 +371,8 @@ class SMBclient(ui.View):
           fh.close()
           os.remove(self.path + '/' + file)
         fh.close()
-    rang = self.view_po['sc_range'].selected_index
-    if rang == 0: # selected file
-      write_files()
-    elif rang == 1: # all files
-      write_files(filter='*.*')
-    elif rang == 2: # filter
-      write_files(filter=self.view_po['tf_filter'].text)
-    all = self.get_dir()
-    self.refresh_table(self.tv_local,self.lst_local,all)
+      all = self.get_dir()
+      self.refresh_table(self.tv_local,self.lst_local,all)
     self.view_po.close()
 
   def table_local_tapped(self, sender):
@@ -451,10 +399,10 @@ class SMBclient(ui.View):
       if filename_tapped == '\\..': # up
         pos = self.pwd.rfind('\\')
         self.pwd = self.pwd[:pos]
-        if self.pwd == '': # root
+        if self.pwd == '':
           self.pwd = '\\'
       else:
-        if self.pwd == '\\': # root
+        if self.is_root(self.pwd):
           self.pwd = filename_tapped
         else:
           self.pwd += filename_tapped
