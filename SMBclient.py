@@ -311,6 +311,9 @@ class SMBclient(ui.View):
       self.username = None
       sender.title = 'Connect'
       self.tv_info.text += "\nConnection closed"
+      all = []
+      self.view['lb_remote'].text = ''
+      self.refresh_table(self.view['tv_remote'], self.lst_remote, all)
 
   def bt_upload(self, sender):	#put
     if self.loggedIn:
