@@ -2,15 +2,11 @@
 # Extract the impacket directory to site-packages (https://pypi.python.org/packages/source/i/impacket/)
 # and you also need a copy of ntpath.py in your site-package directory
 
-import ui, os
-import sys
-import string
-import time
+import os, string, sys, time, ui
 from impacket import smb, version, smb3, nt_errors
 from impacket.dcerpc.v5 import samr, transport, srvs
 from impacket.dcerpc.v5.dtypes import NULL
 from impacket.smbconnection import *
-import time
 
 class SMBclient(ui.View):
 
@@ -61,10 +57,7 @@ class SMBclient(ui.View):
     self.view.present('fullscreen')
 
   def is_root(self, path):
-    if len(path) == 1:
-      if path == '/' or path == '\\':
-        return True
-    return False
+    return path in ('/', '\\')
 
   def open_popover_view(self, view_name, view_title):
     self.view_po = ui.load_view(view_name)
