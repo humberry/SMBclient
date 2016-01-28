@@ -57,7 +57,10 @@ class SMBclient(ui.View):
     self.view.present('fullscreen')
 
   def is_root(self, path):
-    return path in ('/', '\\')
+    if len(path) == 1:            #long paths can contain several / or \ chars
+      return path in ('/', '\\')
+    else:
+      return False
 
   def open_popover_view(self, view_name, view_title):
     self.view_po = ui.load_view(view_name)
